@@ -15,6 +15,7 @@
  */
 import 'dart:io';
 
+import 'package:proxypin/ui/component/api_lab_page.dart';
 import 'package:flutter/material.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/network/bin/server.dart';
@@ -129,6 +130,10 @@ class DrawerWidget extends StatelessWidget {
                 title: Text(localizations.filter),
                 leading: const Icon(Icons.filter_alt_outlined),
                 onTap: () => navigator(context, FilterMenu(proxyServer: proxyServer))),
+            ListTile(
+                title: const Text('مختبر API'),
+                leading: const Icon(Icons.science_outlined),
+                onTap: () => navigator(context, const ApiLabPage())),
             ListTile(
                 title: const Text('الفلاتر المتقدمة'),
                 leading: const Icon(Icons.tune),

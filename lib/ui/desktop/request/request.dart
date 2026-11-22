@@ -15,6 +15,7 @@
  */
 import 'dart:convert';
 
+import 'package:proxypin/ui/component/api_lab_page.dart';
 import 'package:date_format/date_format.dart';
 
 import 'package:proxypin/ui/component/multi_window_compat.dart';
@@ -298,6 +299,7 @@ class _RequestWidgetState extends State<RequestWidget> {
       _menuAction(localizations.script, _RequestMenuAction.script),
       ContextMenuItem.separator(),
       _menuAction(localizations.favorite, _RequestMenuAction.favorite),
+      _menuAction('إضافة إلى مجموعة API', _RequestMenuAction.apiCollection),
       ContextMenuItem.submenu(label: localizations.highlight, submenu: highlightMenu()),
       ContextMenuItem.separator(),
       _menuAction(localizations.select, _RequestMenuAction.select),
@@ -371,6 +373,9 @@ class _RequestWidgetState extends State<RequestWidget> {
         break;
       case _RequestMenuAction.script:
         await _openScriptDialog();
+        break;
+      case _RequestMenuAction.apiCollection:
+        await addToApiCollection(context, widget.request);
         break;
       case _RequestMenuAction.favorite:
         FavoriteStorage.addFavorite(widget.request);
@@ -629,6 +634,7 @@ enum _RequestMenuAction {
   requestMap,
   script,
   favorite,
+  apiCollection,
   select,
   delete,
   batchRepeat,

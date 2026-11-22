@@ -17,6 +17,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:proxypin/ui/component/api_lab_page.dart';
 import 'package:date_format/date_format.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -253,6 +254,10 @@ class _HistoryListState extends State<_HistoryListWidget> {
                 height: 35,
                 child: Text(localizations.export, style: const TextStyle(fontSize: 13)),
                 onTap: () => export(item)),
+            CustomPopupMenuItem(
+                height: 35,
+                child: const Text('مقارنة مع جلسة أخرى', style: TextStyle(fontSize: 13)),
+                onTap: () => compareSessionWith(rootContext, storage, item)),
             const PopupMenuDivider(height: 3),
             CustomPopupMenuItem(
                 height: 35,

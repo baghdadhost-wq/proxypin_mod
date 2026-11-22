@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:proxypin/ui/component/api_lab_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
@@ -234,6 +235,12 @@ class DetailMenuWidget extends StatelessWidget {
                             );
                           });
                     });
+                  }),
+              PopupMenuItem(
+                  child: const Text('إضافة إلى مجموعة API'),
+                  onTap: () {
+                    if (request == null) return;
+                    WidgetsBinding.instance.addPostFrameCallback((_) => addToApiCollection(context, request!));
                   }),
               PopupMenuItem(
                   child: Text(localizations.save),

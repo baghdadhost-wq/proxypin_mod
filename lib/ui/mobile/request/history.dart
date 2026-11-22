@@ -17,6 +17,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:proxypin/ui/component/api_lab_page.dart';
 import 'package:date_format/date_format.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -245,6 +246,7 @@ class _MobileHistoryState extends State<MobileHistory> {
             PopupMenuItem(child: Text(localizations.rename), onTap: () => renameHistory(storage, item)),
             PopupMenuItem(
                 child: Text(localizations.share), onTap: () => export(storage, item, offset: detail.globalPosition)),
+            PopupMenuItem(child: const Text('مقارنة مع جلسة أخرى'), onTap: () => compareSessionWith(context, storage, item)),
             PopupMenuItem(
                 child: const Text('تصدير مُفلتر (API...)'),
                 onTap: () async {

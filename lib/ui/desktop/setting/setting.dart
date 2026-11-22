@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+import 'package:proxypin/ui/component/api_lab_page.dart';
 import 'package:proxypin/ui/component/advanced_filter_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -106,6 +107,7 @@ class _SettingState extends State<Setting> {
               _ProxyMenu(proxyServer: widget.proxyServer),
               item(localizations.domainFilter, onPressed: hostFilter),
               item('الفلاتر المتقدمة', onPressed: advancedFilter),
+              item('مختبر API', onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ApiLabPage()))),
               item(localizations.hosts, onPressed: hosts),
               item(localizations.requestBlock, onPressed: showRequestBlock),
               item(localizations.requestRewrite, onPressed: requestRewrite),
