@@ -1,0 +1,67 @@
+name: Build iOS IPA (unsigned)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      bundle_id:
+        description: "Bundle ID (اختياري، مثال: com.yourname.proxypin)"
+        required: false
+        default: ""
+      team_id:
+        description: "Apple Team ID (اختياري)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Optional - use your own bundle id / team / app group
+        if: ${{ github.event.inputs.bundle_id != '' && github.event.inputs.bundle_id != null }}
+        run: |
+          set -e
+          BID="${{ github.event.inputs.bundle_id }}"
+          PBX=ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' "s/com\.proxy\.pin/${BID}/g" $PBX ios/Runner/Runner.entitlements ios/ProxyPin/ProxyPin.entitlements
+          if [ -n "${{ github.event.inputs.team_id }}" ]; then
+            sed -i '' "s/DEVELOPMENT_TEAM = [A-Z0-9]*;/DEVELOPMENT_TEAM = ${{ github.event.inputs.team_id }};/g" $PBX
+          fi
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - run: flutter --version
+      - run: flutter pub get
+
+      - name: Build (no codesign)
+        run: flutter build ios --release --no-codesign
+
+      - name: Package IPA
+        run: |
+          mkdir -p Payload
+          cp -R build/ios/iphoneos/Runner.app Payload/
+          zip -qry proxypin_mod-unsigned.ipa Payload
+          ls -la proxypin_mod-unsigned.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: proxypin_mod-unsigned
+          path: proxypin_mod-unsigned.ipa
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ios-build-${{ github.run_number }}
+          name: proxypin_mod iOS build ${{ github.run_number }}
+          body: "IPA غير موقّع. وقّعه بحساب مطوّر (Sideloadly / ESign) قبل التثبيت."
+          files: proxypin_mod-unsigned.ipa

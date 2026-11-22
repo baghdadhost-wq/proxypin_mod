@@ -41,6 +41,7 @@ import 'package:proxypin/utils/platform.dart';
 import 'package:proxypin/utils/quick_share.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../../utils/api_export.dart';
 import '../../../utils/har.dart';
 
 class MobileHistory extends StatefulWidget {
@@ -244,6 +245,12 @@ class _MobileHistoryState extends State<MobileHistory> {
             PopupMenuItem(child: Text(localizations.rename), onTap: () => renameHistory(storage, item)),
             PopupMenuItem(
                 child: Text(localizations.share), onTap: () => export(storage, item, offset: detail.globalPosition)),
+            PopupMenuItem(
+                child: const Text('تصدير مُفلتر (API...)'),
+                onTap: () async {
+                  var requests = await storage.getRequests(item);
+                  if (mounted) await ApiExport.showDialogAndExport(context, requests, item.name);
+                }),
           ];
 
           if (QuickShareService.isRemoteConnected(widget.proxyServer) && item.requestLength > 0) {

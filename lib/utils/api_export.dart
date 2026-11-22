@@ -1,0 +1,307 @@
+/*
+ * Filtered export (proxypin_mod): small JSON files instead of a full HAR.
+ * Filters: API, JSON, login/token, video/DRM, errors, all of domain.
+ * Drops images, media segments, fonts, css/js, duplicates, binary and oversized bodies.
+ *
+ * Licensed under the Apache License, Version 2.0.
+ */
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_toastr/flutter_toastr.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:proxypin/network/http/http.dart';
+import 'package:proxypin/utils/platform.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+enum ExportFilter {
+  api('API فقط', 'طلبات الواجهة البرمجية بدون صور أو فيديو أو ملفات ثابتة'),
+  json('JSON فقط', 'الطلبات التي ردّها JSON'),
+  auth('الدخول والتوكن', 'login / token / auth / sso / oauth'),
+  media('الفيديو و DRM', 'ملفات mpd و m3u8 وطلبات الترخيص والمشغّل، بدون المقاطع'),
+  errors('الأخطاء فقط', 'الحالة 400 فما فوق أو بدون رد'),
+  all('كل طلبات النطاق', 'كل شيء للنطاق مع تصغير المحتوى');
+
+  final String label;
+  final String hint;
+
+  const ExportFilter(this.label, this.hint);
+}
+
+class ApiExport {
+  static const String prefsDomains = 'apiExportDomains';
+  static const String prefsFilter = 'apiExportFilter';
+  static const String prefsKeyword = 'apiExportKeyword';
+  static const String defaultDomains = 'almanasa.tv';
+
+  /// Max characters kept from any single body.
+  static int maxBodyChars = 64 * 1024;
+
+  static const _staticExt = [
+    '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico', '.bmp', '.avif',
+    '.css', '.js', '.map', '.woff', '.woff2', '.ttf', '.otf', '.eot', '.html', '.htm',
+  ];
+
+  static const _segmentExt = [
+    '.mp4', '.m4s', '.m4v', '.m4a', '.ts', '.aac', '.mp3', '.webm', '.vtt', '.srt', '.cmfv', '.cmfa', '.init',
+  ];
+
+  static const _staticType = ['image/', 'video/', 'audio/', 'font/', 'text/css', 'javascript', 'text/html'];
+
+  static final _authRe = RegExp(r'(login|logout|token|auth|oauth|openid|sso|session|signin|sign-in|refresh|otp|verify)',
+      caseSensitive: false);
+  static final _mediaRe =
+      RegExp(r'(\.mpd|\.m3u8|license|widevine|playready|fairplay|drm|player|stream|manifest|playback|video)',
+          caseSensitive: false);
+
+  /// Headers kept from responses (requests keep all headers).
+  static const _keepResHeaders = ['content-type', 'location', 'set-cookie', 'www-authenticate'];
+
+  static Future<SharedPreferences> get _prefs => SharedPreferences.getInstance();
+
+  static List<String> parseDomains(String value) => value
+      .split(RegExp(r'[,\s،]+'))
+      .map((e) => e.trim().toLowerCase())
+      .where((e) => e.isNotEmpty)
+      .toList();
+
+  static bool _hostMatches(String host, List<String> domains) {
+    if (domains.isEmpty) return true;
+    host = host.toLowerCase();
+    return domains.any((d) => host == d || host.endsWith('.$d'));
+  }
+
+  static bool matches(HttpRequest r, List<String> domains, ExportFilter filter, String keyword) {
+    final uri = r.requestUri;
+    final host = uri?.host ?? r.hostAndPort?.host ?? '';
+    if (!_hostMatches(host, domains)) return false;
+
+    final method = r.method.name.toUpperCase();
+    if (method == 'CONNECT') return false;
+
+    final url = r.requestUrl;
+    if (keyword.isNotEmpty && !url.toLowerCase().contains(keyword.toLowerCase())) return false;
+
+    final path = (uri?.path ?? '').toLowerCase();
+    final resType = (r.response?.headers.contentType ?? '').toLowerCase();
+    final isStatic = _staticExt.any(path.endsWith);
+    final isSegment = _segmentExt.any(path.endsWith);
+
+    switch (filter) {
+      case ExportFilter.api:
+        if (method == 'OPTIONS' || isStatic || isSegment) return false;
+        return !_staticType.any(resType.contains);
+      case ExportFilter.json:
+        return method != 'OPTIONS' && resType.contains('json');
+      case ExportFilter.auth:
+        return method != 'OPTIONS' && !isStatic && _authRe.hasMatch(url);
+      case ExportFilter.media:
+        return method != 'OPTIONS' && !isSegment && !isStatic && _mediaRe.hasMatch(url);
+      case ExportFilter.errors:
+        final code = r.response?.status.code;
+        return method != 'OPTIONS' && (code == null || code >= 400);
+      case ExportFilter.all:
+        return true;
+    }
+  }
+
+  static String _text(HttpMessage? message) {
+    if (message == null) return '';
+    final body = message.body;
+    if (body == null || body.isEmpty) return '';
+    final type = message.headers.contentType.toLowerCase();
+    final textual = type.isEmpty ||
+        type.contains('json') ||
+        type.contains('text') ||
+        type.contains('xml') ||
+        type.contains('x-www-form-urlencoded') ||
+        type.contains('dash') ||
+        type.contains('mpegurl') ||
+        type.contains('graphql');
+    if (!textual) return '<binary ${body.length} bytes>';
+    var s = message.bodyAsString;
+    if (s.length > maxBodyChars) {
+      s = '${s.substring(0, maxBodyChars)}...<truncated, total ${s.length} chars>';
+    }
+    return s;
+  }
+
+  static dynamic _maybeJson(String s) {
+    final t = s.trimLeft();
+    if (t.startsWith('{') || t.startsWith('[')) {
+      try {
+        return jsonDecode(s);
+      } catch (_) {}
+    }
+    return s;
+  }
+
+  static Map<String, String> _headers(HttpMessage? message, {List<String>? only}) {
+    final out = <String, String>{};
+    message?.headers.forEach((name, values) {
+      if (only != null && !only.contains(name.toLowerCase())) return;
+      out[name] = values.join(', ');
+    });
+    return out;
+  }
+
+  /// Replace ids in a path with {id} so endpoints can be grouped.
+  static String _template(String path) => path.split('/').map((seg) {
+        if (seg.isEmpty) return seg;
+        if (RegExp(r'^\d+$').hasMatch(seg)) return '{id}';
+        if (RegExp(r'^[0-9a-fA-F-]{16,}$').hasMatch(seg)) return '{id}';
+        return seg;
+      }).join('/');
+
+  static Map<String, dynamic> build(List<HttpRequest> all, List<String> domains,
+      {ExportFilter filter = ExportFilter.api, String keyword = ''}) {
+    final list = all.where((r) => matches(r, domains, filter, keyword)).toList()
+      ..sort((a, b) => a.requestTime.compareTo(b.requestTime));
+
+    final seen = <String, Map<String, dynamic>>{};
+    final calls = <Map<String, dynamic>>[];
+    final endpoints = <String, Map<String, dynamic>>{};
+
+    for (final r in list) {
+      final reqBody = _text(r);
+      final key = '${r.method.name} ${r.requestUrl} $reqBody';
+      final previous = seen[key];
+      if (previous != null) {
+        previous['repeated'] = ((previous['repeated'] as int?) ?? 1) + 1;
+        continue;
+      }
+
+      final uri = r.requestUri;
+      final call = <String, dynamic>{
+        'time': r.requestTime.toIso8601String(),
+        'method': r.method.name,
+        'url': r.requestUrl,
+        'requestHeaders': _headers(r),
+        if (reqBody.isNotEmpty) 'requestBody': _maybeJson(reqBody),
+        'status': r.response?.status.code,
+        'responseHeaders': _headers(r.response, only: _keepResHeaders),
+        'responseBody': _maybeJson(_text(r.response)),
+      };
+      seen[key] = call;
+      calls.add(call);
+
+      final ep = '${r.method.name} ${uri?.host ?? ''}${_template(uri?.path ?? '')}';
+      final e = endpoints.putIfAbsent(
+          ep, () => <String, dynamic>{'endpoint': ep, 'count': 0, 'statuses': <int>{}, 'query': <String>{}});
+      e['count'] = (e['count'] as int) + 1;
+      final code = r.response?.status.code;
+      if (code != null) (e['statuses'] as Set<int>).add(code);
+      (e['query'] as Set<String>).addAll(uri?.queryParameters.keys ?? const <String>[]);
+    }
+
+    final endpointList = endpoints.values.map((e) {
+      final statuses = (e['statuses'] as Set<int>).toList();
+      statuses.sort();
+      final query = (e['query'] as Set<String>).toList();
+      query.sort();
+      return <String, dynamic>{'endpoint': e['endpoint'], 'count': e['count'], 'statuses': statuses, 'queryParams': query};
+    }).toList();
+    endpointList.sort((a, b) => (a['endpoint'] as String).compareTo(b['endpoint'] as String));
+
+    return {
+      'tool': 'proxypin_mod filtered export',
+      'filter': filter.name,
+      'keyword': keyword,
+      'domains': domains,
+      'exportedAt': DateTime.now().toIso8601String(),
+      'totalCaptured': all.length,
+      'exportedCalls': calls.length,
+      'endpoints': endpointList,
+      'calls': calls,
+    };
+  }
+
+  /// Asks for filter + domains + keyword (remembered), then saves/shares the file.
+  static Future<void> showDialogAndExport(BuildContext ctx, List<HttpRequest> requests, String name,
+      {VoidCallback? onSuccess}) async {
+    final prefs = await _prefs;
+    final domainCtl = TextEditingController(text: prefs.getString(prefsDomains) ?? defaultDomains);
+    final keywordCtl = TextEditingController(text: prefs.getString(prefsKeyword) ?? '');
+    var filter = ExportFilter.values.firstWhere((f) => f.name == prefs.getString(prefsFilter),
+        orElse: () => ExportFilter.api);
+    if (!ctx.mounted) return;
+
+    final ok = await showDialog<bool>(
+        context: ctx,
+        builder: (context) => Directionality(
+              textDirection: TextDirection.rtl,
+              child: StatefulBuilder(
+                  builder: (context, setState) => AlertDialog(
+                        title: const Text('تصدير مُفلتر'),
+                        content: SingleChildScrollView(
+                          child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                ...ExportFilter.values.map((f) => RadioListTile<ExportFilter>(
+                                      dense: true,
+                                      contentPadding: EdgeInsets.zero,
+                                      value: f,
+                                      groupValue: filter,
+                                      title: Text(f.label),
+                                      subtitle: Text(f.hint, style: const TextStyle(fontSize: 11)),
+                                      onChanged: (v) => setState(() => filter = v ?? filter),
+                                    )),
+                                const Divider(),
+                                const Text('النطاقات (افصل بفاصلة، فارغ = الكل)', style: TextStyle(fontSize: 12)),
+                                TextField(
+                                    controller: domainCtl,
+                                    textDirection: TextDirection.ltr,
+                                    decoration: const InputDecoration(isDense: true, hintText: 'almanasa.tv')),
+                                const SizedBox(height: 8),
+                                const Text('كلمة في الرابط (اختياري)', style: TextStyle(fontSize: 12)),
+                                TextField(
+                                    controller: keywordCtl,
+                                    textDirection: TextDirection.ltr,
+                                    decoration: const InputDecoration(isDense: true, hintText: '/api/')),
+                              ]),
+                        ),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('إلغاء')),
+                          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('تصدير')),
+                        ],
+                      )),
+            ));
+    if (ok != true) return;
+
+    await prefs.setString(prefsDomains, domainCtl.text.trim());
+    await prefs.setString(prefsKeyword, keywordCtl.text.trim());
+    await prefs.setString(prefsFilter, filter.name);
+
+    final data = build(requests, parseDomains(domainCtl.text), filter: filter, keyword: keywordCtl.text.trim());
+    final count = data['exportedCalls'] as int;
+    if (count == 0) {
+      if (ctx.mounted) FlutterToastr.show('لا توجد طلبات تطابق الفلتر', ctx);
+      return;
+    }
+
+    final json = const JsonEncoder.withIndent(' ').convert(data);
+    final fileName = '${name.replaceAll(RegExp(r'[\s:/]'), '_')}_${filter.name}.json';
+    final bytes = utf8.encode(json);
+    try {
+      if (Platforms.isDesktop() || Platform.isAndroid) {
+        await FilePicker.saveFile(fileName: fileName, bytes: bytes);
+      } else {
+        RenderBox? box;
+        if (await Platforms.isIpad() && ctx.mounted) box = ctx.findRenderObject() as RenderBox?;
+        await SharePlus.instance.share(ShareParams(
+            sharePositionOrigin: box == null ? null : box.localToGlobal(Offset.zero) & box.size,
+            fileNameOverrides: [fileName],
+            files: [XFile.fromData(bytes, name: fileName, mimeType: 'application/json')]));
+      }
+      onSuccess?.call();
+      if (ctx.mounted) {
+        FlutterToastr.show('تم: $count طلب (${(bytes.length / 1024).toStringAsFixed(0)} KB)', ctx);
+      }
+    } catch (e) {
+      if (ctx.mounted) FlutterToastr.show('فشل التصدير: $e', ctx);
+    }
+  }
+}

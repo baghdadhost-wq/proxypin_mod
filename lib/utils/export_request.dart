@@ -10,6 +10,7 @@ import 'package:proxypin/network/http/http.dart';
 import 'package:proxypin/network/util/logger.dart';
 import 'package:proxypin/ui/component/utils.dart';
 import 'package:proxypin/ui/configuration.dart';
+import 'package:proxypin/utils/api_export.dart';
 import 'package:proxypin/utils/har.dart';
 import 'package:proxypin/utils/platform.dart';
 import 'package:share_plus/share_plus.dart';
@@ -371,6 +372,14 @@ void showExportDialog(
                     }
                   },
                 );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.api, size: 20),
+              title: const Text('تصدير مُفلتر (API، JSON، الدخول، الفيديو...)'),
+              onTap: () {
+                Navigator.pop(context);
+                ApiExport.showDialogAndExport(ctx, requests, folderName, onSuccess: onExportSuccess);
               },
             ),
           ],
