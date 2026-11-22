@@ -1,0 +1,20 @@
+name: Fetch mux.js (helper for the TV app)
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          set -e
+          npm pack mux.js@5.14.1
+          tar xzf mux.js-5.14.1.tgz
+          cp package/dist/mux.min.js mux.min.js
+          ls -la mux.min.js; head -c 300 mux.min.js; echo; sha256sum mux.min.js
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: muxjs-5.14.1
+          name: mux.js 5.14.1
+          files: mux.min.js
