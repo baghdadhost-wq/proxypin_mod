@@ -44,6 +44,7 @@ import 'package:proxypin/ui/desktop/widgets/highlight.dart';
 import 'package:proxypin/utils/curl.dart';
 import 'package:proxypin/utils/keyword_highlight.dart';
 import 'package:proxypin/utils/lang.dart';
+import 'package:proxypin/utils/golang.dart';
 import 'package:proxypin/utils/python.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -312,6 +313,7 @@ class _RequestWidgetState extends State<RequestWidget> {
       _copyMenuAction(localizations.copyRequestResponse, _RequestCopyMenuAction.requestResponse),
       _copyMenuAction(localizations.copyAsPythonRequests, _RequestCopyMenuAction.pythonRequests),
       _copyMenuAction(localizations.copyAsFetch, _RequestCopyMenuAction.fetch),
+      _copyMenuAction('Copy as Go (net/http)', _RequestCopyMenuAction.go),
     ];
   }
 
@@ -411,6 +413,9 @@ class _RequestWidgetState extends State<RequestWidget> {
         break;
       case _RequestCopyMenuAction.fetch:
         await _copyText(copyAsFetch(widget.request));
+        break;
+      case _RequestCopyMenuAction.go:
+        await _copyText(copyAsGo(widget.request));
         break;
     }
   }
@@ -632,6 +637,6 @@ enum _RequestMenuAction {
   batchCancel,
 }
 
-enum _RequestCopyMenuAction { copyUrl, rawRequest, requestResponse, pythonRequests, fetch }
+enum _RequestCopyMenuAction { copyUrl, rawRequest, requestResponse, pythonRequests, fetch, go }
 
 enum _RequestExportMenuAction { request, requestBody, response, responseBody, har }

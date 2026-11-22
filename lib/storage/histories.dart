@@ -24,6 +24,7 @@ import 'package:proxypin/network/bin/configuration.dart';
 import 'package:proxypin/network/http/http.dart';
 import 'package:proxypin/network/util/logger.dart';
 import 'package:proxypin/storage/path.dart';
+import 'package:proxypin/utils/api_formats.dart';
 import 'package:proxypin/utils/files.dart';
 import 'package:proxypin/utils/har.dart';
 import 'package:proxypin/utils/listenable_list.dart';
@@ -206,7 +207,9 @@ class HistoryStorage {
   //添加历史
   Future<HistoryItem> addHarFile(XFile file) async {
     var readAsBytes = await file.readAsString();
-    var json = jsonDecode(readAsBytes);
+    // proxypin_mod: also accepts Postman, OpenAPI/Swagger and Charles (.chlsj)
+    var json = ImportConverter.toHar(jsonDecode(readAsBytes));
+    if (json == null) throw const FormatException('Unsupported file: HAR, Postman, OpenAPI/Swagger, Charles JSON');
     var log = json['log'];
     String name = formatDate(DateTime.now(), [mm, '-', d, ' ', HH, ':', nn, ':', ss]);
     List? pages = log['pages'] as List?;

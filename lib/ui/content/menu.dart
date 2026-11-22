@@ -14,6 +14,7 @@ import 'package:proxypin/utils/quick_share.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../utils/export_request.dart';
+import '../../utils/golang.dart';
 import '../../utils/python.dart';
 import '../mobile/menu/bottom_navigation.dart';
 import '../mobile/request/request_editor.dart';
@@ -213,6 +214,16 @@ class DetailMenuWidget extends StatelessWidget {
                                       title: Text(localizations.copyAsFetch),
                                       onTap: () {
                                         Clipboard.setData(ClipboardData(text: copyAsFetch(request!)));
+                                        Navigator.of(dialogContext).pop();
+                                        FlutterToastr.show(localizations.copied, context);
+                                      },
+                                    ),
+                                    ListTile(
+                                      visualDensity: const VisualDensity(vertical: -3),
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                                      title: const Text('Copy as Go (net/http)'),
+                                      onTap: () {
+                                        Clipboard.setData(ClipboardData(text: copyAsGo(request!)));
                                         Navigator.of(dialogContext).pop();
                                         FlutterToastr.show(localizations.copied, context);
                                       },

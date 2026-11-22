@@ -12,6 +12,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:proxypin/network/http/http.dart';
+import 'package:proxypin/utils/api_formats.dart';
+import 'package:proxypin/utils/har.dart';
+import 'package:proxypin/utils/redact.dart';
 import 'package:proxypin/utils/platform.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -30,10 +33,24 @@ enum ExportFilter {
   const ExportFilter(this.label, this.hint);
 }
 
+enum ExportFormat {
+  compact('JSON مختصر', 'json'),
+  openapi('OpenAPI 3 (توثيق)', 'openapi.json'),
+  postman('Postman Collection', 'postman_collection.json'),
+  har('HAR مُفلتر', 'har');
+
+  final String label;
+  final String ext;
+
+  const ExportFormat(this.label, this.ext);
+}
+
 class ApiExport {
   static const String prefsDomains = 'apiExportDomains';
   static const String prefsFilter = 'apiExportFilter';
   static const String prefsKeyword = 'apiExportKeyword';
+  static const String prefsFormat = 'apiExportFormat';
+  static const String prefsRedact = 'apiExportRedact';
   static const String defaultDomains = 'almanasa.tv';
 
   /// Max characters kept from any single body.
@@ -156,9 +173,8 @@ class ApiExport {
       }).join('/');
 
   static Map<String, dynamic> build(List<HttpRequest> all, List<String> domains,
-      {ExportFilter filter = ExportFilter.api, String keyword = ''}) {
-    final list = all.where((r) => matches(r, domains, filter, keyword)).toList()
-      ..sort((a, b) => a.requestTime.compareTo(b.requestTime));
+      {ExportFilter filter = ExportFilter.api, String keyword = '', bool redact = false}) {
+    final list = select(all, domains, filter, keyword);
 
     final seen = <String, Map<String, dynamic>>{};
     final calls = <Map<String, dynamic>>[];
@@ -174,15 +190,20 @@ class ApiExport {
       }
 
       final uri = r.requestUri;
+      final resBody = _text(r.response);
       final call = <String, dynamic>{
         'time': r.requestTime.toIso8601String(),
         'method': r.method.name,
-        'url': r.requestUrl,
-        'requestHeaders': _headers(r),
-        if (reqBody.isNotEmpty) 'requestBody': _maybeJson(reqBody),
+        'url': redact ? Redactor.url(r.requestUrl) : r.requestUrl,
+        'requestHeaders': redact ? Redactor.headerMap(_headers(r)) : _headers(r),
+        if (reqBody.isNotEmpty)
+          'requestBody': _maybeJson(redact ? Redactor.body(reqBody, contentType: r.headers.contentType) : reqBody),
         'status': r.response?.status.code,
-        'responseHeaders': _headers(r.response, only: _keepResHeaders),
-        'responseBody': _maybeJson(_text(r.response)),
+        'responseHeaders': redact
+            ? Redactor.headerMap(_headers(r.response, only: _keepResHeaders))
+            : _headers(r.response, only: _keepResHeaders),
+        'responseBody':
+            _maybeJson(redact ? Redactor.body(resBody, contentType: r.response?.headers.contentType ?? '') : resBody),
       };
       seen[key] = call;
       calls.add(call);
@@ -209,6 +230,7 @@ class ApiExport {
       'tool': 'proxypin_mod filtered export',
       'filter': filter.name,
       'keyword': keyword,
+      'redacted': redact,
       'domains': domains,
       'exportedAt': DateTime.now().toIso8601String(),
       'totalCaptured': all.length,
@@ -216,6 +238,44 @@ class ApiExport {
       'endpoints': endpointList,
       'calls': calls,
     };
+  }
+
+  static List<HttpRequest> select(List<HttpRequest> all, List<String> domains, ExportFilter filter, String keyword) =>
+      all.where((r) => matches(r, domains, filter, keyword)).toList()
+        ..sort((a, b) => a.requestTime.compareTo(b.requestTime));
+
+  /// Builds the file content; returns (content, count).
+  static (String, int) render(List<HttpRequest> all, List<String> domains,
+      {required ExportFilter filter, required ExportFormat format, String keyword = '', bool redact = true, String name = 'proxypin_mod'}) {
+    const encoder = JsonEncoder.withIndent(' ');
+    switch (format) {
+      case ExportFormat.compact:
+        final data = build(all, domains, filter: filter, keyword: keyword, redact: redact);
+        return (encoder.convert(data), data['exportedCalls'] as int);
+      case ExportFormat.openapi:
+        final list = select(all, domains, filter, keyword);
+        return (encoder.convert(OpenApiBuilder.build(list, title: name, redact: redact)), list.length);
+      case ExportFormat.postman:
+        final list = select(all, domains, filter, keyword);
+        return (encoder.convert(PostmanBuilder.build(list, name: name, redact: redact)), list.length);
+      case ExportFormat.har:
+        final list = select(all, domains, filter, keyword);
+        final entries = list.map((r) {
+          final e = Har.toHar(r);
+          return redact ? Redactor.harEntry(e) : e;
+        }).toList();
+        final har = {
+          'log': {
+            'version': '1.2',
+            'creator': {'name': 'proxypin_mod', 'version': '1'},
+            'pages': [
+              {'title': name, 'id': 'ProxyPin', 'startedDateTime': list.firstOrNull?.requestTime.toUtc().toIso8601String()}
+            ],
+            'entries': entries,
+          }
+        };
+        return (jsonEncode(har), list.length);
+    }
   }
 
   /// Asks for filter + domains + keyword (remembered), then saves/shares the file.
@@ -226,6 +286,9 @@ class ApiExport {
     final keywordCtl = TextEditingController(text: prefs.getString(prefsKeyword) ?? '');
     var filter = ExportFilter.values.firstWhere((f) => f.name == prefs.getString(prefsFilter),
         orElse: () => ExportFilter.api);
+    var format = ExportFormat.values.firstWhere((f) => f.name == prefs.getString(prefsFormat),
+        orElse: () => ExportFormat.compact);
+    var redact = prefs.getBool(prefsRedact) ?? true;
     if (!ctx.mounted) return;
 
     final ok = await showDialog<bool>(
@@ -240,6 +303,31 @@ class ApiExport {
                               mainAxisSize: MainAxisSize.min,
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
+                                SwitchListTile(
+                                  dense: true,
+                                  contentPadding: EdgeInsets.zero,
+                                  value: redact,
+                                  onChanged: (v) => setState(() => redact = v),
+                                  title: const Text('إخفاء البيانات الحساسة',
+                                      style: TextStyle(fontWeight: FontWeight.bold)),
+                                  subtitle: const Text('التوكن، كلمات المرور، الكوكيز، الإيميل، رقم الهاتف، معرف المستخدم',
+                                      style: TextStyle(fontSize: 11)),
+                                ),
+                                Row(children: [
+                                  const Text('الصيغة: ', style: TextStyle(fontSize: 13)),
+                                  Expanded(
+                                    child: DropdownButton<ExportFormat>(
+                                      isExpanded: true,
+                                      value: format,
+                                      items: ExportFormat.values
+                                          .map((f) => DropdownMenuItem(value: f, child: Text(f.label)))
+                                          .toList(),
+                                      onChanged: (v) => setState(() => format = v ?? format),
+                                    ),
+                                  ),
+                                ]),
+                                const Divider(),
+                                const Text('الفلتر', style: TextStyle(fontSize: 13)),
                                 ...ExportFilter.values.map((f) => RadioListTile<ExportFilter>(
                                       dense: true,
                                       contentPadding: EdgeInsets.zero,
@@ -274,16 +362,18 @@ class ApiExport {
     await prefs.setString(prefsDomains, domainCtl.text.trim());
     await prefs.setString(prefsKeyword, keywordCtl.text.trim());
     await prefs.setString(prefsFilter, filter.name);
+    await prefs.setString(prefsFormat, format.name);
+    await prefs.setBool(prefsRedact, redact);
 
-    final data = build(requests, parseDomains(domainCtl.text), filter: filter, keyword: keywordCtl.text.trim());
-    final count = data['exportedCalls'] as int;
+    final (json, count) = render(requests, parseDomains(domainCtl.text),
+        filter: filter, format: format, keyword: keywordCtl.text.trim(), redact: redact, name: name);
     if (count == 0) {
       if (ctx.mounted) FlutterToastr.show('لا توجد طلبات تطابق الفلتر', ctx);
       return;
     }
 
-    final json = const JsonEncoder.withIndent(' ').convert(data);
-    final fileName = '${name.replaceAll(RegExp(r'[\s:/]'), '_')}_${filter.name}.json';
+    final fileName =
+        '${name.replaceAll(RegExp(r'[\s:/]'), '_')}_${filter.name}${redact ? '_safe' : ''}.${format.ext}';
     final bytes = utf8.encode(json);
     try {
       if (Platforms.isDesktop() || Platform.isAndroid) {
