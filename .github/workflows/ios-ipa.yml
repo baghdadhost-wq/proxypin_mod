@@ -46,6 +46,29 @@ jobs:
       - name: Build (no codesign)
         run: flutter build ios --release --no-codesign
 
+      - name: Embed entitlements (ad-hoc signature, so signing tools keep the VPN capability)
+        run: |
+          set -e
+          APP=build/ios/iphoneos/Runner.app
+          GROUP=$(/usr/libexec/PlistBuddy -c "Print :com.apple.security.application-groups:0" ios/Runner/Runner.entitlements)
+          cat > ent-ext.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>com.apple.developer.networking.networkextension</key><array><string>packet-tunnel-provider</string></array>
+            <key>com.apple.security.application-groups</key><array><string>${GROUP}</string></array>
+          </dict></plist>
+          PLIST
+          sed 's/^          //' ent-ext.plist > ent.plist
+          plutil -lint ent.plist
+          for f in "$APP"/Frameworks/*.framework "$APP"/Frameworks/*.dylib; do
+            [ -e "$f" ] && codesign -f -s - "$f"
+          done
+          codesign -f -s - --entitlements ent.plist "$APP/PlugIns/ProxyPin.appex"
+          codesign -f -s - --entitlements ent.plist "$APP"
+          echo "--- app entitlements"; codesign -d --entitlements :- "$APP"
+          echo "--- extension entitlements"; codesign -d --entitlements :- "$APP/PlugIns/ProxyPin.appex"
+
       - name: Package IPA
         run: |
           mkdir -p Payload
@@ -63,5 +86,5 @@ jobs:
         with:
           tag_name: ios-build-${{ github.run_number }}
           name: proxypin_mod iOS build ${{ github.run_number }}
-          body: "IPA غير موقّع. وقّعه بحساب مطوّر (Sideloadly / ESign) قبل التثبيت."
+          body: "IPA بتوقيع مؤقت (ad-hoc) يحمل صلاحية VPN. أعد توقيعه بحساب مطوّر مدفوع (Sideloadly / ESign) قبل التثبيت."
           files: proxypin_mod-unsigned.ipa
