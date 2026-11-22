@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+import 'package:proxypin/ui/component/advanced_filter_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
@@ -104,6 +105,7 @@ class _SettingState extends State<Setting> {
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
               _ProxyMenu(proxyServer: widget.proxyServer),
               item(localizations.domainFilter, onPressed: hostFilter),
+              item('الفلاتر المتقدمة', onPressed: advancedFilter),
               item(localizations.hosts, onPressed: hosts),
               item(localizations.requestBlock, onPressed: showRequestBlock),
               item(localizations.requestRewrite, onPressed: requestRewrite),
@@ -173,6 +175,11 @@ class _SettingState extends State<Setting> {
         builder: (context) {
           return ExternalProxyDialog(configuration: widget.proxyServer.configuration);
         });
+  }
+
+  /// proxypin_mod: advanced filters
+  void advancedFilter() {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => AdvancedFilterPage(configuration: configuration)));
   }
 
   ///show域名过滤Dialog

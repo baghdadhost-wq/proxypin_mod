@@ -19,6 +19,7 @@ import 'dart:io';
 
 import 'package:proxypin/network/channel/host_port.dart';
 import 'package:proxypin/network/util/file_read.dart';
+import 'package:proxypin/network/components/advanced_filter.dart';
 import 'package:proxypin/network/components/host_filter.dart';
 import 'package:proxypin/network/util/logger.dart';
 import 'package:proxypin/network/util/system_proxy.dart';
@@ -100,6 +101,7 @@ class Configuration {
     appBlacklist = config['appBlacklist'] == null ? null : List<String>.from(config['appBlacklist']);
     HostFilter.whitelist.load(config['whitelist']);
     HostFilter.blacklist.load(config['blacklist']);
+    AdvancedFilter.load(config['advancedFilter']);
   }
 
   /// 配置文件
@@ -152,6 +154,7 @@ class Configuration {
       'enabledHttp2': enabledHttp2,
       'whitelist': HostFilter.whitelist.toJson(),
       'blacklist': HostFilter.blacklist.toJson(),
+      'advancedFilter': AdvancedFilter.toJson(),
     };
   }
 }

@@ -170,7 +170,7 @@ class Server extends Network {
     HostAndPort? hostAndPort = channelContext.host;
 
     //黑名单 或 没开启https 直接转发
-    if ((HostFilter.filter(hostAndPort?.host)) || (hostAndPort?.isSsl() == true && configuration.enableSsl == false)) {
+    if ((HostFilter.filter(hostAndPort?.host, port: hostAndPort?.port, secure: hostAndPort?.isSsl() == true)) || (hostAndPort?.isSsl() == true && configuration.enableSsl == false)) {
       var remoteChannel = channelContext.serverChannel ??
           await channelContext.connectServerChannel(hostAndPort!, RelayHandler(channel));
       relay(channel, remoteChannel);
@@ -225,7 +225,7 @@ class Server extends Network {
 
       remoteChannel = channelContext.serverChannel;
 
-      if (!isHttp || HostFilter.filter(hostAndPort.host) || !configuration.enableSsl) {
+      if (!isHttp || HostFilter.filter(hostAndPort.host, port: hostAndPort.port, secure: true) || !configuration.enableSsl) {
         remoteChannel = remoteChannel ?? await channelContext.connectServerChannel(hostAndPort, RelayHandler(channel));
         relay(channel, remoteChannel);
         channel.dispatcher.channelRead(channelContext, channel, data);

@@ -32,6 +32,7 @@ import 'package:proxypin/ui/mobile/setting/request_breakpoint.dart';
 import 'package:proxypin/ui/mobile/setting/request_map.dart';
 import 'package:proxypin/ui/toolbox/toolbox.dart';
 import 'package:proxypin/ui/component/utils.dart';
+import 'package:proxypin/ui/component/advanced_filter_page.dart';
 import 'package:proxypin/ui/configuration.dart';
 import 'package:proxypin/ui/mobile/setting/preference.dart';
 import 'package:proxypin/ui/mobile/request/favorite.dart';
@@ -128,6 +129,10 @@ class DrawerWidget extends StatelessWidget {
                 title: Text(localizations.filter),
                 leading: const Icon(Icons.filter_alt_outlined),
                 onTap: () => navigator(context, FilterMenu(proxyServer: proxyServer))),
+            ListTile(
+                title: const Text('الفلاتر المتقدمة'),
+                leading: const Icon(Icons.tune),
+                onTap: () => navigator(context, AdvancedFilterPage(configuration: proxyServer.configuration))),
             ListTile(
                 title: Text(localizations.hosts),
                 leading: Icon(Icons.domain),

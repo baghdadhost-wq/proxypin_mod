@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+import 'package:proxypin/network/components/advanced_filter.dart';
+
 void main() {
   print(HostFilter.filter("stackoverflow.com"));
 }
@@ -28,10 +30,14 @@ class HostFilter {
   static final Blacks blacklist = Blacks();
 
   /// 是否过滤
-  static bool filter(String? host) {
+  static bool filter(String? host, {int? port, bool secure = false, bool? websocket}) {
     if (host == null) {
       return false;
     }
+
+    // proxypin_mod: advanced rules (exceptions / exclude / include by domain, IP, port, protocol)
+    final decision = AdvancedFilter.decide(FilterTarget(host, port: port, secure: secure, websocket: websocket));
+    if (decision != null) return decision;
 
     //如果白名单不为空，不在白名单里都是黑名单
     if (whitelist.enabled) {

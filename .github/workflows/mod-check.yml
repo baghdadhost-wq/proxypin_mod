@@ -17,6 +17,6 @@ jobs:
           cache: true
       - run: flutter pub get
       - name: Analyze (errors fail the build)
-        run: flutter analyze --no-fatal-infos --no-fatal-warnings lib test/mod_export_test.dart
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings lib test/mod_export_test.dart test/mod_filter_test.dart
       - name: Mod tests
-        run: flutter test test/mod_export_test.dart
+        run: flutter test test/mod_export_test.dart test/mod_filter_test.dart
